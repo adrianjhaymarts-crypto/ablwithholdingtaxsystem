@@ -10,11 +10,41 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuppliersRouteImport } from './routes/suppliers'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as QuarterlyReportsRouteImport } from './routes/quarterly-reports'
+import { Route as ItwTop10kRouteImport } from './routes/itw-top10k'
+import { Route as ItwExpandedRouteImport } from './routes/itw-expanded'
+import { Route as BackupRouteImport } from './routes/backup'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SuppliersRoute = SuppliersRouteImport.update({
   id: '/suppliers',
   path: '/suppliers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuarterlyReportsRoute = QuarterlyReportsRouteImport.update({
+  id: '/quarterly-reports',
+  path: '/quarterly-reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ItwTop10kRoute = ItwTop10kRouteImport.update({
+  id: '/itw-top10k',
+  path: '/itw-top10k',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ItwExpandedRoute = ItwExpandedRouteImport.update({
+  id: '/itw-expanded',
+  path: '/itw-expanded',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BackupRoute = BackupRouteImport.update({
+  id: '/backup',
+  path: '/backup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -25,27 +55,69 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/backup': typeof BackupRoute
+  '/itw-expanded': typeof ItwExpandedRoute
+  '/itw-top10k': typeof ItwTop10kRoute
+  '/quarterly-reports': typeof QuarterlyReportsRoute
+  '/settings': typeof SettingsRoute
   '/suppliers': typeof SuppliersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/backup': typeof BackupRoute
+  '/itw-expanded': typeof ItwExpandedRoute
+  '/itw-top10k': typeof ItwTop10kRoute
+  '/quarterly-reports': typeof QuarterlyReportsRoute
+  '/settings': typeof SettingsRoute
   '/suppliers': typeof SuppliersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/backup': typeof BackupRoute
+  '/itw-expanded': typeof ItwExpandedRoute
+  '/itw-top10k': typeof ItwTop10kRoute
+  '/quarterly-reports': typeof QuarterlyReportsRoute
+  '/settings': typeof SettingsRoute
   '/suppliers': typeof SuppliersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/suppliers'
+  fullPaths:
+    | '/'
+    | '/backup'
+    | '/itw-expanded'
+    | '/itw-top10k'
+    | '/quarterly-reports'
+    | '/settings'
+    | '/suppliers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/suppliers'
-  id: '__root__' | '/' | '/suppliers'
+  to:
+    | '/'
+    | '/backup'
+    | '/itw-expanded'
+    | '/itw-top10k'
+    | '/quarterly-reports'
+    | '/settings'
+    | '/suppliers'
+  id:
+    | '__root__'
+    | '/'
+    | '/backup'
+    | '/itw-expanded'
+    | '/itw-top10k'
+    | '/quarterly-reports'
+    | '/settings'
+    | '/suppliers'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BackupRoute: typeof BackupRoute
+  ItwExpandedRoute: typeof ItwExpandedRoute
+  ItwTop10kRoute: typeof ItwTop10kRoute
+  QuarterlyReportsRoute: typeof QuarterlyReportsRoute
+  SettingsRoute: typeof SettingsRoute
   SuppliersRoute: typeof SuppliersRoute
 }
 
@@ -56,6 +128,41 @@ declare module '@tanstack/react-router' {
       path: '/suppliers'
       fullPath: '/suppliers'
       preLoaderRoute: typeof SuppliersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quarterly-reports': {
+      id: '/quarterly-reports'
+      path: '/quarterly-reports'
+      fullPath: '/quarterly-reports'
+      preLoaderRoute: typeof QuarterlyReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/itw-top10k': {
+      id: '/itw-top10k'
+      path: '/itw-top10k'
+      fullPath: '/itw-top10k'
+      preLoaderRoute: typeof ItwTop10kRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/itw-expanded': {
+      id: '/itw-expanded'
+      path: '/itw-expanded'
+      fullPath: '/itw-expanded'
+      preLoaderRoute: typeof ItwExpandedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backup': {
+      id: '/backup'
+      path: '/backup'
+      fullPath: '/backup'
+      preLoaderRoute: typeof BackupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -70,8 +177,23 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BackupRoute: BackupRoute,
+  ItwExpandedRoute: ItwExpandedRoute,
+  ItwTop10kRoute: ItwTop10kRoute,
+  QuarterlyReportsRoute: QuarterlyReportsRoute,
+  SettingsRoute: SettingsRoute,
   SuppliersRoute: SuppliersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
