@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/store";
@@ -208,13 +208,10 @@ function Page() {
               </tr>
               <tr>
                 {monthNames.map((m) => (
-                  <th key={m + "ip"} className="border p-2 text-right text-xs" colSpan={1}>
-                    {/* split into two cells */}
-                    Income Payment
-                  </th>
-                ))}
-                {monthNames.map((m) => (
-                  <th key={m + "tw-hidden"} className="hidden" />
+                  <Fragment key={m}>
+                    <th className="border p-2 text-right text-xs">Income Payment</th>
+                    <th className="border p-2 text-right text-xs">Tax Withheld</th>
+                  </Fragment>
                 ))}
                 <th className="border p-2 text-right text-xs">Income</th>
                 <th className="border p-2 text-right text-xs">Withheld</th>
