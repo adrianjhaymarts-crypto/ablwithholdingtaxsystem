@@ -77,10 +77,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Withholding tax compliance and reporting system for Jhaymarts Industries Incorporated." },
       { name: "author", content: "Jhaymarts Industries Incorporated" },
       { property: "og:title", content: "Jhaymarts Withholding Tax Compliance System" },
-      { property: "og:description", content: "Manage suppliers, ITW Top 10K, ITW Expanded and quarterly tax reports." },
+      { property: "og:description", content: "Withholding tax compliance and reporting system for Jhaymarts Industries Incorporated." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Jhaymarts Withholding Tax Compliance System" },
+      { name: "twitter:description", content: "Withholding tax compliance and reporting system for Jhaymarts Industries Incorporated." },
     ],
     links: [
       {
