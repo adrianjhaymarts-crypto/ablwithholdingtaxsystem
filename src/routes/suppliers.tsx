@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Plus, Pencil, Trash2, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/store";
@@ -27,20 +25,18 @@ export const Route = createFileRoute("/suppliers")({
   head: () => ({ meta: [{ title: "Supplier Masterlist — Jhaymarts" }] }),
 });
 
-const schema = z.object({
-  supplierName: z.string().trim().min(1, "Supplier name required").max(200),
-  tinNumber: z.string().trim().min(1, "TIN required").max(50),
-  billingAddress: z.string().max(500).optional().default(""),
-  phoneNumber: z.string().max(100).optional().default(""),
-  vatType: z.enum(["VAT", "NON-VAT", ""]).default(""),
-  atcA: z.string().max(50).optional().default(""),
-  taxRateA: z.coerce.number().min(0).max(1).default(0),
-  atcB: z.string().max(50).optional().default(""),
-  taxRateB: z.coerce.number().min(0).max(1).default(0),
-  expandedWithholdingType: z.string().max(300).optional().default(""),
-});
-
-type FormData = z.infer<typeof schema>;
+interface FormData {
+  supplierName: string;
+  tinNumber: string;
+  billingAddress: string;
+  phoneNumber: string;
+  vatType: "" | "VAT" | "NON-VAT";
+  atcA: string;
+  taxRateA: number;
+  atcB: string;
+  taxRateB: number;
+  expandedWithholdingType: string;
+}
 
 function SuppliersPage() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier, bulkUpsertSuppliers } = useAppStore();
@@ -51,7 +47,6 @@ function SuppliersPage() {
   const pageSize = 10;
 
   const form = useForm<FormData>({
-    resolver: zodResolver(schema),
     defaultValues: {
       supplierName: "",
       tinNumber: "",
@@ -93,6 +88,14 @@ function SuppliersPage() {
   }
 
   function onSubmit(values: FormData) {
+    if (!values.supplierName?.trim()) {
+      toast.error("Supplier name is required");
+      return;
+    }
+    if (!values.tinNumber?.trim()) {
+      toast.error("TIN is required");
+      return;
+    }
     const dup = suppliers.find(
       (s) =>
         s.id !== editing?.id &&
