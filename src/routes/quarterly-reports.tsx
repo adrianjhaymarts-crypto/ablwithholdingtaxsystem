@@ -208,10 +208,13 @@ function Page() {
               </tr>
               <tr>
                 {monthNames.map((m) => (
-                  <>
-                    <th key={m + "ip"} className="border p-2 text-right text-xs">Income Payment</th>
-                    <th key={m + "tw"} className="border p-2 text-right text-xs">Tax Withheld</th>
-                  </>
+                  <th key={m + "ip"} className="border p-2 text-right text-xs" colSpan={1}>
+                    {/* split into two cells */}
+                    Income Payment
+                  </th>
+                ))}
+                {monthNames.map((m) => (
+                  <th key={m + "tw-hidden"} className="hidden" />
                 ))}
                 <th className="border p-2 text-right text-xs">Income</th>
                 <th className="border p-2 text-right text-xs">Withheld</th>
