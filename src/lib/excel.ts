@@ -95,8 +95,63 @@ export async function parseSuppliersFromFile(
 export interface ParsedITWRow {
   vendorName: string;
   tinNumber: string;
-  amountTaxWithheld: number;
+  amount: number; // Column F = Income Payment (gross)
   transactionDate: string;
+  memo: string;
+  memoRate: number; // tax rate parsed from memo (e.g. "2%") if present
+}
+
+const EXCLUDED_VENDORS = new Set(
+  ["fao - bureau of internal revenue"].map((s) => s.toLowerCase())
+);
+
+function normVendor(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, "").replace(/[.,]/g, "");
+}
+
+function parseDateAny(v: any): { iso: string; month: number; year: number } | null {
+  if (v == null || v === "") return null;
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return {
+      iso: v.toISOString().slice(0, 10),
+      month: v.getMonth() + 1,
+      year: v.getFullYear(),
+    };
+  }
+  const s = String(v).trim();
+  // MM/DD/YYYY or M/D/YYYY
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (m) {
+    let [, mo, da, yr] = m;
+    let year = parseInt(yr);
+    if (year < 100) year += 2000;
+    const month = parseInt(mo);
+    const day = parseInt(da);
+    const d = new Date(year, month - 1, day);
+    if (isNaN(d.getTime())) return null;
+    return { iso: d.toISOString().slice(0, 10), month, year };
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return {
+      iso: d.toISOString().slice(0, 10),
+      month: d.getMonth() + 1,
+      year: d.getFullYear(),
+    };
+  }
+  return null;
+}
+
+function parseMemoRate(memo: string): number {
+  if (!memo) return 0;
+  const m = String(memo).match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  return isNaN(n) ? 0 : n / 100;
+}
+
+export function quarterOf(month: number): 1 | 2 | 3 | 4 {
+  return (Math.floor((month - 1) / 3) + 1) as 1 | 2 | 3 | 4;
 }
 
 export async function parseITWFromFile(file: File): Promise<ParsedITWRow[]> {
@@ -106,45 +161,34 @@ export async function parseITWFromFile(file: File): Promise<ParsedITWRow[]> {
   const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
   if (rows.length === 0) return [];
 
-  const headerIdx = findHeaderRow(rows, [
-    "vendor",
-    "tin",
-    "tax withheld",
-    "withheld",
-  ]);
-  const headers = rows[headerIdx].map((h: any) => norm(h).toLowerCase());
-  const idx = (...names: string[]) => {
-    for (const n of names) {
-      const i = headers.findIndex((h) => h.includes(n.toLowerCase()));
-      if (i !== -1) return i;
-    }
-    return -1;
-  };
-
-  const cVendor = idx("vendor name", "vendor", "supplier", "payee");
-  const cTin = idx("tin");
-  // Column F (index 5) is fallback for amount withheld
-  const cWithheld = idx("tax withheld", "withheld", "amount of tax");
-  const cDate = idx("date", "period", "transaction");
+  // Positional mapping per spec:
+  //   Column A (0) = Date
+  //   Column D (3) = Vendor Name
+  //   Column E (4) = Memo/Description (often contains "2%" etc.)
+  //   Column F (5) = Amount (Income Payment, gross)
+  // First row is the header — skip it.
+  const headerRow = rows[0].map((c) => norm(c).toLowerCase());
+  const startIdx = headerRow.some((c) => c.includes("date") || c.includes("vendor") || c.includes("name") || c.includes("amount")) ? 1 : 0;
 
   const out: ParsedITWRow[] = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const r = rows[i];
-    const vendorName = norm(r[cVendor]);
-    const wIdx = cWithheld !== -1 ? cWithheld : 5; // column F
-    const amt = parseNumber(r[wIdx]);
-    if (!vendorName && !amt) continue;
-    let dateStr = "";
-    if (cDate !== -1) {
-      const d = r[cDate];
-      if (d instanceof Date) dateStr = d.toISOString().slice(0, 10);
-      else if (d) dateStr = norm(d);
-    }
+  for (let i = startIdx; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const rawVendor = norm(r[3]);
+    const amount = parseNumber(r[5]);
+    const date = parseDateAny(r[0]);
+    // Validations: skip empty rows, NaN, missing vendor, excluded vendors
+    if (!rawVendor) continue;
+    if (EXCLUDED_VENDORS.has(rawVendor.toLowerCase())) continue;
+    if (!amount || isNaN(amount)) continue;
+    if (!date) continue;
+    const memo = norm(r[4]);
     out.push({
-      vendorName,
-      tinNumber: norm(r[cTin]),
-      amountTaxWithheld: amt,
-      transactionDate: dateStr || new Date().toISOString().slice(0, 10),
+      vendorName: rawVendor,
+      tinNumber: "",
+      amount,
+      transactionDate: date.iso,
+      memo,
+      memoRate: parseMemoRate(memo),
     });
   }
   return out;
@@ -156,27 +200,37 @@ export function buildITWRecords(
   suppliers: Supplier[],
   sourceFile: string
 ): Omit<ITWRecord, "id" | "createdAt">[] {
-  const byTin = new Map(suppliers.filter((s) => s.tinNumber).map((s) => [s.tinNumber.replace(/\D/g, ""), s]));
-  const byName = new Map(
-    suppliers.map((s) => [s.supplierName.toLowerCase().trim(), s])
-  );
+  const byName = new Map<string, Supplier>();
+  for (const s of suppliers) {
+    if (s.supplierName) byName.set(normVendor(s.supplierName), s);
+  }
 
   return parsed.map((p) => {
-    const tinKey = p.tinNumber.replace(/\D/g, "");
-    const matched =
-      (tinKey && byTin.get(tinKey)) ||
-      byName.get(p.vendorName.toLowerCase().trim()) ||
-      null;
-    const rate = matched ? (matched.taxRateA || matched.taxRateB || 0) : 0;
-    const incomePayment = rate > 0 ? p.amountTaxWithheld / rate : 0;
+    const key = normVendor(p.vendorName);
+    const matched = byName.get(key) || null;
+    // Pick best ATC/Rate: prefer A, fallback to B; fallback to memo rate
+    const supRate = matched ? (matched.taxRateA || matched.taxRateB || 0) : 0;
+    const supAtc = matched ? (matched.atcA || matched.atcB || "") : "";
+    const rate = supRate || p.memoRate || 0;
+    const atc = supAtc;
+    const incomePayment = p.amount;
+    const taxWithheld = +(incomePayment * rate).toFixed(2);
+    const d = new Date(p.transactionDate);
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
     return {
-      vendorName: p.vendorName || (matched?.supplierName ?? ""),
-      tinNumber: p.tinNumber || (matched?.tinNumber ?? ""),
+      vendorName: matched?.supplierName ?? p.vendorName,
+      tinNumber: matched?.tinNumber ?? "",
+      atc,
       taxRate: rate,
-      amountTaxWithheld: p.amountTaxWithheld,
+      amountTaxWithheld: taxWithheld,
       amountIncomePayment: incomePayment,
-      grandTotal: incomePayment + p.amountTaxWithheld,
+      grandTotal: +(incomePayment + taxWithheld).toFixed(2),
       transactionDate: p.transactionDate,
+      month,
+      year,
+      quarter: quarterOf(month),
+      memo: p.memo,
       sourceFile,
       matchedSupplier: matched?.supplierName ?? null,
     };
