@@ -18,11 +18,16 @@ export interface ITWRecord {
   id: string;
   tinNumber: string;
   vendorName: string;
+  atc: string;
   taxRate: number;
   amountTaxWithheld: number;
   amountIncomePayment: number;
   grandTotal: number;
   transactionDate: string;
+  month: number; // 1-12
+  quarter: 1 | 2 | 3 | 4;
+  year: number;
+  memo: string;
   sourceFile: string;
   matchedSupplier: string | null;
   createdAt: string;
