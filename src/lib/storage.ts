@@ -103,13 +103,29 @@ export function cleanupEmpty() {
   let removed = 0;
   for (const c of COLLECTIONS) {
     const rows = read<any[]>(c, []);
-    if (Array.isArray(rows)) {
-      const filtered = rows.filter(
-        (r) => r && typeof r === "object" && Object.keys(r).length > 1
-      );
-      removed += rows.length - filtered.length;
-      write(c, filtered);
+    if (!Array.isArray(rows)) continue;
+    let filtered = rows.filter(
+      (r) => r && typeof r === "object" && Object.keys(r).length > 1
+    );
+    if (c === "itw_top10k" || c === "itw_expanded") {
+      filtered = filtered.filter((r: any) => {
+        const hasVendor = typeof r.vendorName === "string" && r.vendorName.trim().length > 0;
+        const hasDate = typeof r.transactionDate === "string" && r.transactionDate.trim().length > 0 && !isNaN(new Date(r.transactionDate).getTime());
+        const amt = Number(r.amountIncomePayment);
+        const hasAmount = !isNaN(amt) && amt > 0;
+        return hasVendor && hasDate && hasAmount;
+      });
+      // dedupe by date|vendor|amount|memo
+      const seen = new Set<string>();
+      filtered = filtered.filter((r: any) => {
+        const k = `${r.transactionDate}|${String(r.vendorName).toLowerCase()}|${r.amountIncomePayment}|${r.memo ?? ""}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
     }
+    removed += rows.length - filtered.length;
+    write(c, filtered);
   }
   return removed;
 }

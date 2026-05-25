@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/store";
@@ -14,26 +14,38 @@ export const Route = createFileRoute("/quarterly-reports")({
   head: () => ({ meta: [{ title: "Quarterly Reports — Jhaymarts" }] }),
 });
 
-function monthOfQuarter(date: string, quarter: number): 1 | 2 | 3 | 0 {
-  const m = new Date(date).getMonth() + 1;
+function monthSlot(month: number, quarter: number): 1 | 2 | 3 | 0 {
   const start = (quarter - 1) * 3 + 1;
-  if (m === start) return 1;
-  if (m === start + 1) return 2;
-  if (m === start + 2) return 3;
+  if (month === start) return 1;
+  if (month === start + 1) return 2;
+  if (month === start + 2) return 3;
   return 0;
 }
 
+function recordMonthYear(r: ITWRecord): { month: number; year: number } | null {
+  if (r.month && r.year) return { month: r.month, year: r.year };
+  if (!r.transactionDate) return null;
+  // Parse YYYY-MM-DD without timezone shift
+  const m = r.transactionDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return { year: parseInt(m[1]), month: parseInt(m[2]) };
+  const d = new Date(r.transactionDate);
+  if (isNaN(d.getTime())) return null;
+  return { month: d.getMonth() + 1, year: d.getFullYear() };
+}
+
 function summarize(records: ITWRecord[], year: number, quarter: number) {
-  const out = { m1Ip: 0, m1Tw: 0, m2Ip: 0, m2Tw: 0, m3Ip: 0, m3Tw: 0 };
+  const out = {
+    m1Ip: 0, m1Tw: 0, m2Ip: 0, m2Tw: 0, m3Ip: 0, m3Tw: 0,
+    has1: false, has2: false, has3: false,
+  };
   for (const r of records) {
-    if (!r.transactionDate) continue;
-    const d = new Date(r.transactionDate);
-    if (isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== year) continue;
-    const which = monthOfQuarter(r.transactionDate, quarter);
+    const my = recordMonthYear(r);
+    if (!my || my.year !== year) continue;
+    const which = monthSlot(my.month, quarter);
     if (which === 0) continue;
     out[`m${which}Ip` as "m1Ip"] += r.amountIncomePayment || 0;
     out[`m${which}Tw` as "m1Tw"] += r.amountTaxWithheld || 0;
+    out[`has${which}` as "has1"] = true;
   }
   return out;
 }
@@ -41,13 +53,59 @@ function summarize(records: ITWRecord[], year: number, quarter: number) {
 function Page() {
   const { top10k, expanded, settings } = useAppStore();
   const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
+
+  // Auto-detect available years and quarters from uploaded data
+  const { availableYears, availableByYear } = useMemo(() => {
+    const all = [...top10k, ...expanded];
+    const byYear = new Map<number, Set<number>>();
+    for (const r of all) {
+      const my = recordMonthYear(r);
+      if (!my) continue;
+      const q = (Math.floor((my.month - 1) / 3) + 1);
+      if (!byYear.has(my.year)) byYear.set(my.year, new Set());
+      byYear.get(my.year)!.add(q);
+    }
+    const years = Array.from(byYear.keys()).sort((a, b) => b - a);
+    return { availableYears: years, availableByYear: byYear };
+  }, [top10k, expanded]);
+
+  const defaultYear = availableYears[0] ?? currentYear;
+  const [year, setYear] = useState<number>(defaultYear);
   const [quarter, setQuarter] = useState<1 | 2 | 3 | 4>(
     (Math.floor(new Date().getMonth() / 3) + 1) as 1 | 2 | 3 | 4
   );
 
+  // Keep selection aligned with available data
+  useEffect(() => {
+    if (availableYears.length === 0) return;
+    if (!availableYears.includes(year)) {
+      setYear(availableYears[0]);
+      return;
+    }
+    const qs = availableByYear.get(year);
+    if (qs && qs.size > 0 && !qs.has(quarter)) {
+      setQuarter(Array.from(qs).sort()[0] as 1 | 2 | 3 | 4);
+    }
+  }, [availableYears, availableByYear, year, quarter]);
+
   const top = useMemo(() => summarize(top10k, year, quarter), [top10k, year, quarter]);
   const exp = useMemo(() => summarize(expanded, year, quarter), [expanded, year, quarter]);
+
+  // Which month slots (1/2/3) have any data for this quarter — hide empty months
+  const showSlot = useMemo(
+    () => ({
+      1: top.has1 || exp.has1,
+      2: top.has2 || exp.has2,
+      3: top.has3 || exp.has3,
+    }),
+    [top, exp]
+  );
+  const activeSlots = useMemo(
+    () => ([1, 2, 3] as const).filter((s) => showSlot[s]),
+    [showSlot]
+  );
+  const yearOptions = availableYears.length > 0 ? availableYears : [currentYear];
+  const quarterOptions = (availableByYear.get(year) ? Array.from(availableByYear.get(year)!).sort() : [1, 2, 3, 4]) as number[];
 
   const monthNames = useMemo(() => {
     const start = (quarter - 1) * 3;
@@ -56,12 +114,12 @@ function Page() {
   }, [quarter]);
 
   function reportRows() {
-    return [
-      ["TYPE", `${monthNames[0]} Income`, `${monthNames[0]} Withheld`,
-        `${monthNames[1]} Income`, `${monthNames[1]} Withheld`,
-        `${monthNames[2]} Income`, `${monthNames[2]} Withheld`,
-        "Quarter Total Income", "Quarter Total Withheld"],
-    ];
+    const head: string[] = ["TYPE"];
+    for (const s of activeSlots) {
+      head.push(`${monthNames[s - 1]} Income`, `${monthNames[s - 1]} Withheld`);
+    }
+    head.push("Quarter Total Income", "Quarter Total Withheld");
+    return [head];
   }
 
   const totalTopIp = top.m1Ip + top.m2Ip + top.m3Ip;
@@ -69,23 +127,23 @@ function Page() {
   const totalExpIp = exp.m1Ip + exp.m2Ip + exp.m3Ip;
   const totalExpTw = exp.m1Tw + exp.m2Tw + exp.m3Tw;
 
+  const buildRow = (label: string, s: typeof top, tip: number, ttw: number): (string | number)[] => {
+    const row: (string | number)[] = [label];
+    for (const slot of activeSlots) {
+      row.push(formatCurrency(s[`m${slot}Ip` as "m1Ip"]), formatCurrency(s[`m${slot}Tw` as "m1Tw"]));
+    }
+    row.push(formatCurrency(tip), formatCurrency(ttw));
+    return row;
+  };
   const body: (string | number)[][] = [
-    ["ITW-TOP 10K",
-      formatCurrency(top.m1Ip), formatCurrency(top.m1Tw),
-      formatCurrency(top.m2Ip), formatCurrency(top.m2Tw),
-      formatCurrency(top.m3Ip), formatCurrency(top.m3Tw),
-      formatCurrency(totalTopIp), formatCurrency(totalTopTw)],
-    ["ITW-EXPANDED",
-      formatCurrency(exp.m1Ip), formatCurrency(exp.m1Tw),
-      formatCurrency(exp.m2Ip), formatCurrency(exp.m2Tw),
-      formatCurrency(exp.m3Ip), formatCurrency(exp.m3Tw),
-      formatCurrency(totalExpIp), formatCurrency(totalExpTw)],
+    buildRow("ITW-TOP 10K", top, totalTopIp, totalTopTw),
+    buildRow("ITW-EXPANDED", exp, totalExpIp, totalExpTw),
   ];
 
   function exportPDF() {
     buildReportPDF({
       title: `Quarterly Withholding Tax Report — Q${quarter} ${year}`,
-      subtitle: `Months: ${monthNames.join(" / ")}`,
+      subtitle: `Months: ${activeSlots.map((s) => monthNames[s - 1]).join(" / ") || "—"}`,
       settings,
       head: reportRows(),
       body,
@@ -94,30 +152,20 @@ function Page() {
   }
 
   async function exportExcel() {
+    const toRow = (label: string, s: typeof top, tip: number, ttw: number) => {
+      const o: Record<string, any> = { Type: label };
+      for (const slot of activeSlots) {
+        o[`${monthNames[slot - 1]} Income`] = s[`m${slot}Ip` as "m1Ip"];
+        o[`${monthNames[slot - 1]} Withheld`] = s[`m${slot}Tw` as "m1Tw"];
+      }
+      o["Quarter Income"] = tip;
+      o["Quarter Withheld"] = ttw;
+      return o;
+    };
     await exportToExcel(
       [
-        {
-          Type: "ITW-TOP 10K",
-          [`${monthNames[0]} Income`]: top.m1Ip,
-          [`${monthNames[0]} Withheld`]: top.m1Tw,
-          [`${monthNames[1]} Income`]: top.m2Ip,
-          [`${monthNames[1]} Withheld`]: top.m2Tw,
-          [`${monthNames[2]} Income`]: top.m3Ip,
-          [`${monthNames[2]} Withheld`]: top.m3Tw,
-          "Quarter Income": totalTopIp,
-          "Quarter Withheld": totalTopTw,
-        },
-        {
-          Type: "ITW-EXPANDED",
-          [`${monthNames[0]} Income`]: exp.m1Ip,
-          [`${monthNames[0]} Withheld`]: exp.m1Tw,
-          [`${monthNames[1]} Income`]: exp.m2Ip,
-          [`${monthNames[1]} Withheld`]: exp.m2Tw,
-          [`${monthNames[2]} Income`]: exp.m3Ip,
-          [`${monthNames[2]} Withheld`]: exp.m3Tw,
-          "Quarter Income": totalExpIp,
-          "Quarter Withheld": totalExpTw,
-        },
+        toRow("ITW-TOP 10K", top, totalTopIp, totalTopTw),
+        toRow("ITW-EXPANDED", exp, totalExpIp, totalExpTw),
       ],
       `quarterly-Q${quarter}-${year}.xlsx`,
       `Q${quarter} ${year}`
@@ -153,7 +201,7 @@ function Page() {
             onChange={(e) => setQuarter(parseInt(e.target.value) as 1 | 2 | 3 | 4)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
-            {[1, 2, 3, 4].map((q) => (
+            {quarterOptions.map((q) => (
               <option key={q} value={q}>
                 Q{q}
               </option>
@@ -167,13 +215,18 @@ function Page() {
             onChange={(e) => setYear(parseInt(e.target.value))}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
-            {Array.from({ length: 8 }, (_, i) => currentYear - 5 + i).map((y) => (
+            {yearOptions.map((y) => (
               <option key={y} value={y}>
                 {y}
               </option>
             ))}
           </select>
         </div>
+        {activeSlots.length === 0 && (
+          <p className="text-xs text-muted-foreground self-end">
+            No uploaded data for Q{quarter} {year}.
+          </p>
+        )}
       </div>
 
       <GlassCard className="print:bg-white print:shadow-none">
@@ -191,7 +244,9 @@ function Page() {
           <p className="mt-3 font-semibold">
             Quarterly Withholding Tax Report — Q{quarter} {year}
           </p>
-          <p className="text-xs text-muted-foreground">{monthNames.join(" · ")}</p>
+          <p className="text-xs text-muted-foreground">
+            {activeSlots.map((s) => monthNames[s - 1]).join(" · ") || "No data for this quarter"}
+          </p>
         </div>
 
         <div className="overflow-x-auto">
@@ -199,16 +254,16 @@ function Page() {
             <thead className="bg-accent/40">
               <tr>
                 <th rowSpan={2} className="border p-2 text-left">TYPE</th>
-                {monthNames.map((m, i) => (
-                  <th key={m} colSpan={2} className="border p-2 text-center">
-                    {`${["1st","2nd","3rd"][i]} Month — ${m}`}
+                {activeSlots.map((s) => (
+                  <th key={s} colSpan={2} className="border p-2 text-center">
+                    {`${["1st","2nd","3rd"][s - 1]} Month — ${monthNames[s - 1]}`}
                   </th>
                 ))}
                 <th colSpan={2} className="border p-2 text-center">Quarter Total</th>
               </tr>
               <tr>
-                {monthNames.map((m) => (
-                  <Fragment key={m}>
+                {activeSlots.map((s) => (
+                  <Fragment key={s}>
                     <th className="border p-2 text-right text-xs">Income Payment</th>
                     <th className="border p-2 text-right text-xs">Tax Withheld</th>
                   </Fragment>
@@ -224,24 +279,24 @@ function Page() {
               ].map((r) => (
                 <tr key={r.label}>
                   <td className="border p-2 font-medium">{r.label}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m1Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m1Tw)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m2Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m2Tw)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m3Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m3Tw)}</td>
+                  {activeSlots.map((slot) => (
+                    <Fragment key={slot}>
+                      <td className="border p-2 text-right">{formatCurrency(r.s[`m${slot}Ip` as "m1Ip"])}</td>
+                      <td className="border p-2 text-right">{formatCurrency(r.s[`m${slot}Tw` as "m1Tw"])}</td>
+                    </Fragment>
+                  ))}
                   <td className="border p-2 text-right font-semibold">{formatCurrency(r.tip)}</td>
                   <td className="border p-2 text-right font-semibold">{formatCurrency(r.ttw)}</td>
                 </tr>
               ))}
               <tr className="bg-accent/30 font-bold">
                 <td className="border p-2">GRAND TOTAL</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m1Ip + exp.m1Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m1Tw + exp.m1Tw)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m2Ip + exp.m2Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m2Tw + exp.m2Tw)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m3Ip + exp.m3Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m3Tw + exp.m3Tw)}</td>
+                {activeSlots.map((slot) => (
+                  <Fragment key={slot}>
+                    <td className="border p-2 text-right">{formatCurrency(top[`m${slot}Ip` as "m1Ip"] + exp[`m${slot}Ip` as "m1Ip"])}</td>
+                    <td className="border p-2 text-right">{formatCurrency(top[`m${slot}Tw` as "m1Tw"] + exp[`m${slot}Tw` as "m1Tw"])}</td>
+                  </Fragment>
+                ))}
                 <td className="border p-2 text-right">{formatCurrency(totalTopIp + totalExpIp)}</td>
                 <td className="border p-2 text-right">{formatCurrency(totalTopTw + totalExpTw)}</td>
               </tr>
