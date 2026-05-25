@@ -114,12 +114,12 @@ function Page() {
   }, [quarter]);
 
   function reportRows() {
-    return [
-      ["TYPE", `${monthNames[0]} Income`, `${monthNames[0]} Withheld`,
-        `${monthNames[1]} Income`, `${monthNames[1]} Withheld`,
-        `${monthNames[2]} Income`, `${monthNames[2]} Withheld`,
-        "Quarter Total Income", "Quarter Total Withheld"],
-    ];
+    const head: string[] = ["TYPE"];
+    for (const s of activeSlots) {
+      head.push(`${monthNames[s - 1]} Income`, `${monthNames[s - 1]} Withheld`);
+    }
+    head.push("Quarter Total Income", "Quarter Total Withheld");
+    return [head];
   }
 
   const totalTopIp = top.m1Ip + top.m2Ip + top.m3Ip;
@@ -127,17 +127,17 @@ function Page() {
   const totalExpIp = exp.m1Ip + exp.m2Ip + exp.m3Ip;
   const totalExpTw = exp.m1Tw + exp.m2Tw + exp.m3Tw;
 
+  const buildRow = (label: string, s: typeof top, tip: number, ttw: number): (string | number)[] => {
+    const row: (string | number)[] = [label];
+    for (const slot of activeSlots) {
+      row.push(formatCurrency(s[`m${slot}Ip` as "m1Ip"]), formatCurrency(s[`m${slot}Tw` as "m1Tw"]));
+    }
+    row.push(formatCurrency(tip), formatCurrency(ttw));
+    return row;
+  };
   const body: (string | number)[][] = [
-    ["ITW-TOP 10K",
-      formatCurrency(top.m1Ip), formatCurrency(top.m1Tw),
-      formatCurrency(top.m2Ip), formatCurrency(top.m2Tw),
-      formatCurrency(top.m3Ip), formatCurrency(top.m3Tw),
-      formatCurrency(totalTopIp), formatCurrency(totalTopTw)],
-    ["ITW-EXPANDED",
-      formatCurrency(exp.m1Ip), formatCurrency(exp.m1Tw),
-      formatCurrency(exp.m2Ip), formatCurrency(exp.m2Tw),
-      formatCurrency(exp.m3Ip), formatCurrency(exp.m3Tw),
-      formatCurrency(totalExpIp), formatCurrency(totalExpTw)],
+    buildRow("ITW-TOP 10K", top, totalTopIp, totalTopTw),
+    buildRow("ITW-EXPANDED", exp, totalExpIp, totalExpTw),
   ];
 
   function exportPDF() {
@@ -152,30 +152,20 @@ function Page() {
   }
 
   async function exportExcel() {
+    const toRow = (label: string, s: typeof top, tip: number, ttw: number) => {
+      const o: Record<string, any> = { Type: label };
+      for (const slot of activeSlots) {
+        o[`${monthNames[slot - 1]} Income`] = s[`m${slot}Ip` as "m1Ip"];
+        o[`${monthNames[slot - 1]} Withheld`] = s[`m${slot}Tw` as "m1Tw"];
+      }
+      o["Quarter Income"] = tip;
+      o["Quarter Withheld"] = ttw;
+      return o;
+    };
     await exportToExcel(
       [
-        {
-          Type: "ITW-TOP 10K",
-          [`${monthNames[0]} Income`]: top.m1Ip,
-          [`${monthNames[0]} Withheld`]: top.m1Tw,
-          [`${monthNames[1]} Income`]: top.m2Ip,
-          [`${monthNames[1]} Withheld`]: top.m2Tw,
-          [`${monthNames[2]} Income`]: top.m3Ip,
-          [`${monthNames[2]} Withheld`]: top.m3Tw,
-          "Quarter Income": totalTopIp,
-          "Quarter Withheld": totalTopTw,
-        },
-        {
-          Type: "ITW-EXPANDED",
-          [`${monthNames[0]} Income`]: exp.m1Ip,
-          [`${monthNames[0]} Withheld`]: exp.m1Tw,
-          [`${monthNames[1]} Income`]: exp.m2Ip,
-          [`${monthNames[1]} Withheld`]: exp.m2Tw,
-          [`${monthNames[2]} Income`]: exp.m3Ip,
-          [`${monthNames[2]} Withheld`]: exp.m3Tw,
-          "Quarter Income": totalExpIp,
-          "Quarter Withheld": totalExpTw,
-        },
+        toRow("ITW-TOP 10K", top, totalTopIp, totalTopTw),
+        toRow("ITW-EXPANDED", exp, totalExpIp, totalExpTw),
       ],
       `quarterly-Q${quarter}-${year}.xlsx`,
       `Q${quarter} ${year}`
@@ -262,16 +252,16 @@ function Page() {
             <thead className="bg-accent/40">
               <tr>
                 <th rowSpan={2} className="border p-2 text-left">TYPE</th>
-                {monthNames.map((m, i) => (
-                  <th key={m} colSpan={2} className="border p-2 text-center">
-                    {`${["1st","2nd","3rd"][i]} Month — ${m}`}
+                {activeSlots.map((s) => (
+                  <th key={s} colSpan={2} className="border p-2 text-center">
+                    {`${["1st","2nd","3rd"][s - 1]} Month — ${monthNames[s - 1]}`}
                   </th>
                 ))}
                 <th colSpan={2} className="border p-2 text-center">Quarter Total</th>
               </tr>
               <tr>
-                {monthNames.map((m) => (
-                  <Fragment key={m}>
+                {activeSlots.map((s) => (
+                  <Fragment key={s}>
                     <th className="border p-2 text-right text-xs">Income Payment</th>
                     <th className="border p-2 text-right text-xs">Tax Withheld</th>
                   </Fragment>
@@ -287,24 +277,24 @@ function Page() {
               ].map((r) => (
                 <tr key={r.label}>
                   <td className="border p-2 font-medium">{r.label}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m1Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m1Tw)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m2Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m2Tw)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m3Ip)}</td>
-                  <td className="border p-2 text-right">{formatCurrency(r.s.m3Tw)}</td>
+                  {activeSlots.map((slot) => (
+                    <Fragment key={slot}>
+                      <td className="border p-2 text-right">{formatCurrency(r.s[`m${slot}Ip` as "m1Ip"])}</td>
+                      <td className="border p-2 text-right">{formatCurrency(r.s[`m${slot}Tw` as "m1Tw"])}</td>
+                    </Fragment>
+                  ))}
                   <td className="border p-2 text-right font-semibold">{formatCurrency(r.tip)}</td>
                   <td className="border p-2 text-right font-semibold">{formatCurrency(r.ttw)}</td>
                 </tr>
               ))}
               <tr className="bg-accent/30 font-bold">
                 <td className="border p-2">GRAND TOTAL</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m1Ip + exp.m1Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m1Tw + exp.m1Tw)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m2Ip + exp.m2Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m2Tw + exp.m2Tw)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m3Ip + exp.m3Ip)}</td>
-                <td className="border p-2 text-right">{formatCurrency(top.m3Tw + exp.m3Tw)}</td>
+                {activeSlots.map((slot) => (
+                  <Fragment key={slot}>
+                    <td className="border p-2 text-right">{formatCurrency(top[`m${slot}Ip` as "m1Ip"] + exp[`m${slot}Ip` as "m1Ip"])}</td>
+                    <td className="border p-2 text-right">{formatCurrency(top[`m${slot}Tw` as "m1Tw"] + exp[`m${slot}Tw` as "m1Tw"])}</td>
+                  </Fragment>
+                ))}
                 <td className="border p-2 text-right">{formatCurrency(totalTopIp + totalExpIp)}</td>
                 <td className="border p-2 text-right">{formatCurrency(totalTopTw + totalExpTw)}</td>
               </tr>
