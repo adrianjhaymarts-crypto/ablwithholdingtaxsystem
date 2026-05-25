@@ -143,7 +143,7 @@ function Page() {
   function exportPDF() {
     buildReportPDF({
       title: `Quarterly Withholding Tax Report — Q${quarter} ${year}`,
-      subtitle: `Months: ${monthNames.join(" / ")}`,
+      subtitle: `Months: ${activeSlots.map((s) => monthNames[s - 1]).join(" / ") || "—"}`,
       settings,
       head: reportRows(),
       body,
@@ -244,7 +244,9 @@ function Page() {
           <p className="mt-3 font-semibold">
             Quarterly Withholding Tax Report — Q{quarter} {year}
           </p>
-          <p className="text-xs text-muted-foreground">{monthNames.join(" · ")}</p>
+          <p className="text-xs text-muted-foreground">
+            {activeSlots.map((s) => monthNames[s - 1]).join(" · ") || "No data for this quarter"}
+          </p>
         </div>
 
         <div className="overflow-x-auto">
