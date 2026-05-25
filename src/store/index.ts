@@ -156,16 +156,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refreshExpanded();
   },
   bulkAddTop10k: (rows) => {
-    const stamped = rows.map((r) => ({ ...r, createdAt: nowIso() }));
+    const existing = top10kCol.list();
+    const seen = new Set(
+      existing.map((r) => `${r.transactionDate}|${r.vendorName.toLowerCase()}|${r.amountIncomePayment}|${r.memo ?? ""}`)
+    );
+    let dup = 0;
+    const fresh = rows.filter((r) => {
+      const k = `${r.transactionDate}|${r.vendorName.toLowerCase()}|${r.amountIncomePayment}|${(r as any).memo ?? ""}`;
+      if (seen.has(k)) { dup++; return false; }
+      seen.add(k);
+      return true;
+    });
+    const stamped = fresh.map((r) => ({ ...r, createdAt: nowIso() }));
     top10kCol.insertMany(stamped as any);
     get().refreshTop10k();
-    logActivity("ITW Top 10K", `Imported ${rows.length} records`, "success");
+    logActivity(
+      "ITW Top 10K",
+      `Imported ${fresh.length} records${dup ? ` (${dup} duplicates skipped)` : ""}`,
+      "success"
+    );
   },
   bulkAddExpanded: (rows) => {
-    const stamped = rows.map((r) => ({ ...r, createdAt: nowIso() }));
+    const existing = expandedCol.list();
+    const seen = new Set(
+      existing.map((r) => `${r.transactionDate}|${r.vendorName.toLowerCase()}|${r.amountIncomePayment}|${r.memo ?? ""}`)
+    );
+    let dup = 0;
+    const fresh = rows.filter((r) => {
+      const k = `${r.transactionDate}|${r.vendorName.toLowerCase()}|${r.amountIncomePayment}|${(r as any).memo ?? ""}`;
+      if (seen.has(k)) { dup++; return false; }
+      seen.add(k);
+      return true;
+    });
+    const stamped = fresh.map((r) => ({ ...r, createdAt: nowIso() }));
     expandedCol.insertMany(stamped as any);
     get().refreshExpanded();
-    logActivity("ITW Expanded", `Imported ${rows.length} records`, "success");
+    logActivity(
+      "ITW Expanded",
+      `Imported ${fresh.length} records${dup ? ` (${dup} duplicates skipped)` : ""}`,
+      "success"
+    );
   },
   updateTop10k: (id, patch) => {
     top10kCol.update(id, patch);
